@@ -32,6 +32,13 @@ const userSchema = new mongoose.Schema(
       enum: ["user", "admin"],
       default: "user",
     },
+    refreshTokens: [{
+      token: String,
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      }
+    }]
   },
   {
     timestamps: true,
@@ -53,9 +60,9 @@ userSchema.pre("save", async function (next) {
 });
 
 // Compare password method
-userSchema.methods.comparePassword = async function (candidatePassword) {
+userSchema.methods.comparePassword = async function (userPassword) {
   try {
-    return await bcrypt.compare(candidatePassword, this.password);
+    return await bcrypt.compare(userPassword, this.password);
   } catch (error) {
     throw new Error("Password comparison failed");
   }

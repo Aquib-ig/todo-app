@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const connectDatabase = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
+const todoRoutes = require("./routes/todoRoutes");
 
 const app = express();
 
@@ -11,7 +12,7 @@ connectDatabase();
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
@@ -19,11 +20,17 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Todo Authentication API is running!",
+    version: "1.0.0",
+    endpoints: {
+      auth: "/api/auth",
+      todos: "/api/todos",
+    },
     timestamp: new Date().toISOString(),
   });
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/todos", todoRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
