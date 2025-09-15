@@ -1,17 +1,11 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto");
 
 // Generate JWT Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE,
   });
-};
-
-// Generate Refresh Token
-const generateRefreshToken = () => {
-  return crypto.randomBytes(32).toString("hex");
 };
 
 // Register User
@@ -38,19 +32,6 @@ const registerUser = async (req, res) => {
 
     // Generate token
     const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken();
-
-    // Calculate expiry 30 days from now
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
-    // Save refresh token to user
-    user.refreshTokens.push({
-      token: refreshToken,
-      createdAt: new Date(),
-      expiresAt: expiresAt,
-    });
-    await user.save();
 
     res.status(201).json({
       success: true,
@@ -61,9 +42,10 @@ const registerUser = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
         accessToken,
-        refreshToken,
         tokenType: "Bearer",
       },
     });
@@ -111,20 +93,7 @@ const loginUser = async (req, res) => {
     }
 
     // Generate token
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken();
-
-    // Calculate expiry 30 days from now
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
-    // Save refresh token to user
-    user.refreshTokens.push({
-      token: refreshToken,
-      createdAt: new Date(),
-      expiresAt: expiresAt,
-    });
-    await user.save();
+    const accessToken = generateToken(user._id);
 
     res.status(200).json({
       success: true,
@@ -135,9 +104,10 @@ const loginUser = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
         accessToken,
-        refreshToken,
         tokenType: "Bearer",
       },
     });
@@ -151,101 +121,9 @@ const loginUser = async (req, res) => {
   }
 };
 
-// Refresh Token (UPDATED - Rolling Expiry)
-const refreshToken = async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: "Refresh token is required",
-      });
-    }
-
-    // Find user with this refresh token
-    const user = await User.findOne({
-      "refreshTokens.token": refreshToken,
-    });
-
-    if (!user) {
-      return res.status(403).json({
-        success: false,
-        message: "Invalid refresh token",
-      });
-    }
-
-    // Find the specific refresh token
-    const tokenObj = user.refreshTokens.find((t) => t.token === refreshToken);
-
-    // Check if token exists and is not expired
-    if (!tokenObj || (tokenObj.expiresAt && new Date() > tokenObj.expiresAt)) {
-      return res.status(403).json({
-        success: false,
-        message: "Refresh token expired",
-      });
-    }
-
-    // REMOVE old refresh token
-    user.refreshTokens = user.refreshTokens.filter(
-      (t) => t.token !== refreshToken
-    );
-
-    // Generate NEW tokens
-    const newAccessToken = generateAccessToken(user._id);
-    const newRefreshToken = generateRefreshToken();
-
-    // EXTEND the expiry by another 30 days (rolling expiry)
-    const newExpiresAt = new Date();
-    newExpiresAt.setDate(newExpiresAt.getDate() + 30);
-
-    // Save NEW refresh token with extended expiry
-    user.refreshTokens.push({
-      token: newRefreshToken,
-      createdAt: new Date(),
-      expiresAt: newExpiresAt, // Fresh 30 days from now
-    });
-
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Tokens refreshed successfully",
-      data: {
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-        tokenType: "Bearer",
-      },
-    });
-  } catch (error) {
-    console.error("Refresh token error:", error);
-    res.status(403).json({
-      success: false,
-      message: "Invalid refresh token",
-    });
-  }
-};
-
-// Logout (ONLY way to end session)
+// Logout User (Simple)
 const logoutUser = async (req, res) => {
   try {
-    const { refreshToken } = req.body;
-
-    if (refreshToken) {
-      // Find user and remove refresh token
-      const user = await User.findOne({
-        "refreshTokens.token": refreshToken,
-      });
-
-      if (user) {
-        // Remove this specific refresh token
-        user.refreshTokens = user.refreshTokens.filter(
-          (tokenObj) => tokenObj.token !== refreshToken
-        );
-        await user.save();
-      }
-    }
-
     res.status(200).json({
       success: true,
       message: "Logged out successfully",
@@ -259,7 +137,7 @@ const logoutUser = async (req, res) => {
   }
 };
 
-// Get User Profile (Protected Route)
+// Get User Profile
 const getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -273,6 +151,7 @@ const getUserProfile = async (req, res) => {
           email: user.email,
           role: user.role,
           createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
       },
     });
@@ -286,7 +165,7 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// Update User Profile (NEW ENDPOINT)
+// Update User Profile
 const updateUser = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -321,9 +200,7 @@ const updateUser = async (req, res) => {
         });
       }
 
-      const isCurrentPasswordValid = await user.comparePassword(
-        currentPassword
-      );
+      const isCurrentPasswordValid = await user.comparePassword(currentPassword);
       if (!isCurrentPasswordValid) {
         return res.status(400).json({
           success: false,
@@ -331,7 +208,7 @@ const updateUser = async (req, res) => {
         });
       }
 
-      user.password = newPassword; // Will be hashed by pre-save hook
+      user.password = newPassword;
     }
 
     // Update fields
@@ -349,6 +226,7 @@ const updateUser = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
       },
@@ -363,7 +241,7 @@ const updateUser = async (req, res) => {
   }
 };
 
-// Delete User Account (NEW ENDPOINT)
+// Delete User Account
 const deleteUser = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -402,7 +280,7 @@ const deleteUser = async (req, res) => {
       });
     }
 
-    // Delete user's todos first (cleanup)
+    // Delete user's todos first
     const Todo = require("../models/Todo");
     await Todo.deleteMany({ userId: user._id });
 
@@ -426,7 +304,6 @@ const deleteUser = async (req, res) => {
 module.exports = {
   registerUser,
   loginUser,
-  refreshToken,
   logoutUser,
   getUserProfile,
   updateUser,
